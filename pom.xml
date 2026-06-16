@@ -12,6 +12,14 @@
     <name>DatabaseConnect</name>
     <description>数据库连接与操作模块</description>
 
+    <distributionManagement>
+        <repository>
+            <id>github</id>
+            <name>GitHub Packages</name>
+            <url>https://maven.pkg.github.com/BigData2026QDU/DatabaseConnectModule</url>
+        </repository>
+    </distributionManagement>
+
     <properties>
         <maven.compiler.source>17</maven.compiler.source>
         <maven.compiler.target>17</maven.compiler.target>

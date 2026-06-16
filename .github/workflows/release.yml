@@ -34,6 +34,11 @@ jobs:
       - name: Build with Maven
         run: mvn clean package -B
 
+      - name: Publish to GitHub Packages
+        run: mvn deploy -DskipTests -B
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
       - name: Create Release
         uses: softprops/action-gh-release@v1
         with:
@@ -44,9 +49,9 @@ jobs:
 
             数据库连接与操作模块
 
-            ### 使用方法
+            ### 📦 安装方法
 
-            Maven:
+            **Maven:**
             ```xml
             <dependency>
                 <groupId>org.bigdata</groupId>
@@ -55,6 +60,20 @@ jobs:
             </dependency>
             ```
 
-            或直接下载 JAR 文件添加到项目中。
+            配置 GitHub Packages 仓库：
+            ```xml
+            <repositories>
+                <repository>
+                    <id>github</id>
+                    <url>https://maven.pkg.github.com/BigData2026QDU/DatabaseConnectModule</url>
+                </repository>
+            </repositories>
+            ```
+
+            **或直接下载 JAR 文件添加到项目中。**
+
+            ### 📄 更新内容
+
+            详见 [Commits](${{ github.event.repository.html_url }}/compare/${{ github.event.release.target_commitish }})
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
