@@ -11,7 +11,7 @@ import java.util.function.Consumer;
 import java.util.function.Function;
 
 public class HibernateUtil {
-    private static SessionFactory sessionFactory;
+    private static volatile SessionFactory sessionFactory;
     private static final Object lock = new Object();
 
     private HibernateUtil() {}

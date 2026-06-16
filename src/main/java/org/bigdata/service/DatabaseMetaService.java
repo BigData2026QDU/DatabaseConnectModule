@@ -74,9 +74,6 @@ public class DatabaseMetaService {
 
             List<String> selected = normalizeColumns(selectedColumns);
             if (!selected.isEmpty()) {
-                if (selected.size() < 1) {
-                    throw new IllegalArgumentException("columns 参数为空");
-                }
                 for (String c : selected) {
                     if (!columns.contains(c)) {
                         throw new IllegalArgumentException("列不存在：" + tableName + "." + c);
@@ -87,7 +84,7 @@ public class DatabaseMetaService {
 
             // 2. 获取数据
             String sql;
-            if (selected == null || selected.isEmpty()) {
+            if (selected.isEmpty()) {
                 sql = "SELECT * FROM `" + tableName + "` LIMIT " + safeLimit;
             } else {
                 String selectCols = String.join("`,`", columns);
