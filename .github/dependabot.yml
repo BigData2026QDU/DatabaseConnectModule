@@ -1,0 +1,26 @@
+# Dependabot 版本更新配置
+# 文档：https://docs.github.com/code-security/dependabot/dependabot-version-updates/configuration-options-for-the-dependabot.yml-file
+
+version: 2
+updates:
+  # Maven 依赖更新配置
+  - package-ecosystem: "maven"
+    directory: "/"
+    schedule:
+      interval: "weekly"
+      day: "monday"
+      time: "08:00"
+      timezone: "Asia/Shanghai"
+    target-branch: "main"
+    labels:
+      - "dependencies"
+      - "maven"
+    # 关键修改：指定团队作为指派人 and 审查者
+    assignees:
+      - "BigData2026QDU/bigdata2026qdu"
+    reviewers:
+      - "BigData2026QDU/bigdata2026qdu"
+    commit-message:
+      prefix: "[Maven]"
+      include: "scope"
+    open-pull-requests-limit: 10
