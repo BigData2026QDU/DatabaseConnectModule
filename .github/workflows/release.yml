@@ -25,6 +25,27 @@ jobs:
         with:
           submodules: recursive
 
+      - name: Determine version
+        id: version
+        run: |
+          if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
+            VERSION="${{ github.event.inputs.version }}"
+            echo "version=v${VERSION}" >> $GITHUB_OUTPUT
+            echo "version_number=${VERSION}" >> $GITHUB_OUTPUT
+          else
+            VERSION="${{ github.ref_name }}"
+            echo "version=${VERSION}" >> $GITHUB_OUTPUT
+            echo "version_number=${VERSION#v}" >> $GITHUB_OUTPUT
+          fi
+
+      - name: Create or update tag (manual trigger only)
+        if: github.event_name == 'workflow_dispatch'
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git tag -a "${{ steps.version.outputs.version }}" -m "Release ${{ steps.version.outputs.version }}"
+          git push origin "${{ steps.version.outputs.version }}"
+
       - name: Set up JDK 17
         uses: actions/setup-java@v4
         with:
@@ -41,6 +62,9 @@ jobs:
           key: ${{ runner.os }}-maven-${{ hashFiles('**/pom.xml') }}
           restore-keys: ${{ runner.os }}-maven-
 
+      - name: Update pom.xml version
+        run: mvn versions:set -DnewVersion=${{ steps.version.outputs.version_number }} -B
+
       - name: Build with Maven
         run: mvn clean package -B
 
@@ -53,10 +77,11 @@ jobs:
       - name: Create Release
         uses: softprops/action-gh-release@v1
         with:
+          tag_name: ${{ steps.version.outputs.version }}
           files: |
             target/database-connect-*.jar
           body: |
-            ## DatabaseConnect ${{ github.ref_name }}
+            ## DatabaseConnect ${{ steps.version.outputs.version }}
 
             数据库连接与操作模块
 
@@ -67,7 +92,7 @@ jobs:
             <dependency>
                 <groupId>org.bigdata</groupId>
                 <artifactId>database-connect</artifactId>
-                <version>${{ github.ref_name }}</version>
+                <version>${{ steps.version.outputs.version_number }}</version>
             </dependency>
             ```
 
@@ -85,6 +110,6 @@ jobs:
 
             ### 📄 更新内容
 
-            详见 [Commits](${{ github.event.repository.html_url }}/compare/${{ github.event.release.target_commitish }})
+            详见 [Commits](${{ github.event.repository.html_url }}/commits/main)
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
