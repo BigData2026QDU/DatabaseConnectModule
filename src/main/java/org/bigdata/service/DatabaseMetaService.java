@@ -1,6 +1,6 @@
-package org.example.Service;
+package org.bigdata.service;
 
-import org.example.Tool.HibernateUtil;
+import org.bigdata.tool.HibernateUtil;
 import org.hibernate.query.NativeQuery;
 
 import java.util.*;

@@ -1,4 +1,4 @@
-package org.example.Tool;
+package org.bigdata.tool;
 
 import org.hibernate.Session;
 import org.hibernate.SessionFactory;
