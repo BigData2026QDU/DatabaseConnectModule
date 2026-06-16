@@ -4,6 +4,12 @@ on:
   push:
     tags:
       - 'v*'
+  workflow_dispatch:
+    inputs:
+      version:
+        description: 'Release version (e.g., 1.0.0)'
+        required: true
+        default: '1.0.0'
 
 jobs:
   release:
@@ -12,6 +18,7 @@ jobs:
 
     permissions:
       contents: write
+      packages: write
 
     steps:
       - uses: actions/checkout@v4
@@ -23,6 +30,9 @@ jobs:
         with:
           java-version: '17'
           distribution: 'temurin'
+          server-id: github
+          server-username: GITHUB_ACTOR
+          server-password: GITHUB_TOKEN
 
       - name: Cache Maven packages
         uses: actions/cache@v4
@@ -37,6 +47,7 @@ jobs:
       - name: Publish to GitHub Packages
         run: mvn deploy -DskipTests -B
         env:
+          GITHUB_ACTOR: ${{ github.actor }}
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
       - name: Create Release
