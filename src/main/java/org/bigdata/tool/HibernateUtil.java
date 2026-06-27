@@ -17,9 +17,9 @@ public class HibernateUtil {
     private HibernateUtil() {}
 
     public static SessionFactory getSessionFactory() {
-        if (sessionFactory == null) {
+        if (sessionFactory == null || sessionFactory.isClosed()) {
             synchronized (lock) {
-                if (sessionFactory == null) {
+                if (sessionFactory == null || sessionFactory.isClosed()) {
                     sessionFactory = new Configuration().configure().buildSessionFactory();
                 }
             }
@@ -103,8 +103,13 @@ public class HibernateUtil {
     }
 
     public static void shutdown() {
-        if (sessionFactory != null && !sessionFactory.isClosed()) {
-            sessionFactory.close();
+        synchronized (lock) {
+            if (sessionFactory != null) {
+                if (!sessionFactory.isClosed()) {
+                    sessionFactory.close();
+                }
+                sessionFactory = null;
+            }
         }
     }
 }
