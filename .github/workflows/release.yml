@@ -1,115 +1,211 @@
 name: Release
 
 on:
-  push:
-    tags:
-      - 'v*'
+  issues:
+    types:
+      - opened
   workflow_dispatch:
     inputs:
-      version:
-        description: 'Release version (e.g., 1.0.0)'
-        required: true
-        default: '1.0.0'
+      release_version:
+        description: "Optional semantic version, for example 1.0.1"
+        required: false
+        type: string
+
+permissions:
+  contents: write
+  issues: write
 
 jobs:
   release:
-    name: 发布 Release
+    if: github.event_name == 'workflow_dispatch' || startsWith(github.event.issue.title, '[可发布]')
     runs-on: ubuntu-latest
 
-    permissions:
-      contents: write
-      packages: write
-
     steps:
-      - uses: actions/checkout@v4
+      - name: Acknowledge release trigger
+        if: github.event_name == 'issues'
+        uses: actions/github-script@v7
         with:
+          script: |
+            await github.rest.issues.createComment({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              issue_number: context.issue.number,
+              body: [
+                '## 已接收发布请求',
+                '',
+                '- 当前仓库职责：仅执行构建与发布',
+                '- 本仓库不会在发布流里运行测试',
+                '- 前置验证由外部测试框架负责'
+              ].join('\n')
+            });
+
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
           submodules: recursive
-
-      - name: Determine version
-        id: version
-        run: |
-          if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
-            VERSION="${{ github.event.inputs.version }}"
-            echo "version=v${VERSION}" >> $GITHUB_OUTPUT
-            echo "version_number=${VERSION}" >> $GITHUB_OUTPUT
-          else
-            VERSION="${{ github.ref_name }}"
-            echo "version=${VERSION}" >> $GITHUB_OUTPUT
-            echo "version_number=${VERSION#v}" >> $GITHUB_OUTPUT
-          fi
-
-      - name: Create or update tag (manual trigger only)
-        if: github.event_name == 'workflow_dispatch'
-        run: |
-          git config user.name "github-actions[bot]"
-          git config user.email "github-actions[bot]@users.noreply.github.com"
-          git tag -a "${{ steps.version.outputs.version }}" -m "Release ${{ steps.version.outputs.version }}"
-          git push origin "${{ steps.version.outputs.version }}"
 
       - name: Set up JDK 17
         uses: actions/setup-java@v4
         with:
-          java-version: '17'
-          distribution: 'temurin'
-          server-id: github
-          server-username: GITHUB_ACTOR
-          server-password: GITHUB_TOKEN
+          distribution: temurin
+          java-version: "17"
+          cache: maven
 
-      - name: Cache Maven packages
-        uses: actions/cache@v4
+      - name: Resolve release version
+        id: version
+        shell: bash
+        run: |
+          python - <<'PY'
+          import json
+          import os
+          import re
+          import subprocess
+          import xml.etree.ElementTree as ET
+
+          def normalize(version: str) -> str:
+              version = version.strip().lstrip("v")
+              if version.endswith("-SNAPSHOT"):
+                  version = version[:-9]
+              parts = version.split(".")
+              if len(parts) == 2:
+                  version = f"{version}.0"
+              if not re.fullmatch(r"\d+\.\d+\.\d+", version):
+                  raise SystemExit(f"Release version must be semantic version, got: {version!r}")
+              return version
+
+          event = json.load(open(os.environ["GITHUB_EVENT_PATH"], encoding="utf-8"))
+          manual = ((event.get("inputs") or {}).get("release_version") or "").strip()
+
+          if manual:
+              release_version = normalize(manual)
+          else:
+              ns = {"m": "http://maven.apache.org/POM/4.0.0"}
+              tree = ET.parse("pom.xml")
+              version_node = tree.getroot().find("m:version", ns)
+              base_version = normalize(version_node.text if version_node is not None else "")
+              latest_tag = subprocess.run(
+                  ["git", "tag", "--list", "v*", "--sort=-version:refname"],
+                  check=True,
+                  capture_output=True,
+                  text=True,
+              ).stdout.strip().splitlines()
+
+              if latest_tag:
+                  major, minor, patch = map(int, normalize(latest_tag[0]).split("."))
+                  release_version = f"{major}.{minor}.{patch + 1}"
+              else:
+                  release_version = base_version
+
+          with open(os.environ["GITHUB_OUTPUT"], "a", encoding="utf-8") as fh:
+              fh.write(f"release_version={release_version}\n")
+              fh.write(f"release_tag=v{release_version}\n")
+          PY
+
+      - name: Set Maven project version for release
+        run: mvn -B -ntp versions:set -DnewVersion=${{ steps.version.outputs.release_version }} -DgenerateBackupPoms=false
+
+      - name: Build JAR package
+        run: mvn -B -ntp clean package -DskipTests
+
+      - name: Upload release artifact
+        uses: actions/upload-artifact@v4
         with:
-          path: ~/.m2/repository
-          key: ${{ runner.os }}-maven-${{ hashFiles('**/pom.xml') }}
-          restore-keys: ${{ runner.os }}-maven-
+          name: database-connect-release-jar
+          path: target/*.jar
+          if-no-files-found: error
 
-      - name: Update pom.xml version
-        run: mvn versions:set -DnewVersion=${{ steps.version.outputs.version_number }} -B
-
-      - name: Build with Maven
-        run: mvn clean package -B
-
-      - name: Publish to GitHub Packages
-        run: mvn deploy -DskipTests -B
+      - name: Create or update GitHub release
+        id: github_release
         env:
-          GITHUB_ACTOR: ${{ github.actor }}
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GH_TOKEN: ${{ github.token }}
+          RELEASE_TAG: ${{ steps.version.outputs.release_tag }}
+          RELEASE_VERSION: ${{ steps.version.outputs.release_version }}
+        shell: bash
+        run: |
+          if [ "$GITHUB_EVENT_NAME" = "issues" ]; then
+            TRIGGER_DESCRIPTION="Issue #${{ github.event.issue.number }}"
+          else
+            TRIGGER_DESCRIPTION="workflow_dispatch"
+          fi
 
-      - name: Create Release
-        uses: softprops/action-gh-release@v1
+          NOTES_FILE="$RUNNER_TEMP/release-notes.md"
+          cat <<EOF > "$NOTES_FILE"
+          ## 发布说明
+
+          - 发布版本：${RELEASE_VERSION}
+          - 触发来源：${TRIGGER_DESCRIPTION}
+          - 对应提交：${GITHUB_SHA}
+          - 构建命令：\`mvn -B -ntp clean package -DskipTests\`
+          - 测试执行：本仓库未运行测试；前置验证由外部测试框架负责
+          EOF
+
+          if gh release view "$RELEASE_TAG" >/dev/null 2>&1; then
+            gh release edit "$RELEASE_TAG" --title "$RELEASE_TAG" --notes-file "$NOTES_FILE"
+          else
+            gh release create "$RELEASE_TAG" --title "$RELEASE_TAG" --notes-file "$NOTES_FILE" --target "$GITHUB_SHA"
+          fi
+
+          shopt -s nullglob
+          jars=(target/*.jar)
+          if [ ${#jars[@]} -eq 0 ]; then
+            echo "No JAR artifacts found to upload." >&2
+            exit 1
+          fi
+
+          for jar in "${jars[@]}"; do
+            gh release upload "$RELEASE_TAG" "$jar" --clobber
+          done
+
+          echo "release_url=$(gh release view "$RELEASE_TAG" --json url -q .url)" >> "$GITHUB_OUTPUT"
+
+      - name: Close trigger issue on success
+        if: success() && github.event_name == 'issues'
+        uses: actions/github-script@v7
+        env:
+          RELEASE_URL: ${{ steps.github_release.outputs.release_url }}
+          RELEASE_VERSION: ${{ steps.version.outputs.release_version }}
         with:
-          tag_name: ${{ steps.version.outputs.version }}
-          files: |
-            target/database-connect-*.jar
-          body: |
-            ## DatabaseConnect ${{ steps.version.outputs.version }}
+          script: |
+            const body = [
+              '## 构建与发布已完成',
+              '',
+              `- 发布版本：${process.env.RELEASE_VERSION}`,
+              `- GitHub Release：${process.env.RELEASE_URL}`,
+              '- 构建产物：`target/*.jar`',
+              '- 测试说明：本仓库未执行测试；发布前置验证由外部测试框架负责'
+            ].join('\n');
 
-            数据库连接与操作模块
+            await github.rest.issues.createComment({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              issue_number: context.issue.number,
+              body
+            });
 
-            ### 📦 安装方法
+            await github.rest.issues.update({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              issue_number: context.issue.number,
+              state: 'closed'
+            });
 
-            **Maven:**
-            ```xml
-            <dependency>
-                <groupId>org.bigdata</groupId>
-                <artifactId>database-connect</artifactId>
-                <version>${{ steps.version.outputs.version_number }}</version>
-            </dependency>
-            ```
-
-            配置 GitHub Packages 仓库：
-            ```xml
-            <repositories>
-                <repository>
-                    <id>github</id>
-                    <url>https://maven.pkg.github.com/BigData2026QDU/DatabaseConnectModule</url>
-                </repository>
-            </repositories>
-            ```
-
-            **或直接下载 JAR 文件添加到项目中。**
-
-            ### 📄 更新内容
-
-            详见 [Commits](${{ github.event.repository.html_url }}/commits/main)
+      - name: Comment on failure
+        if: failure() && github.event_name == 'issues'
+        uses: actions/github-script@v7
         env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+        with:
+          script: |
+            await github.rest.issues.createComment({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              issue_number: context.issue.number,
+              body: [
+                '## 构建或发布失败',
+                '',
+                `- 工作流运行：${process.env.RUN_URL}`,
+                '- 当前仓库职责：仅执行构建与发布',
+                '- 请优先检查 JAR 构建与 Release 上传日志'
+              ].join('\n')
+            });
