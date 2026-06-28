@@ -130,9 +130,9 @@ mvn clean package
 ```
 
 生成文件：
-- `target/database-connect-1.0.1.jar` — 主 JAR
-- `target/database-connect-1.0.1-sources.jar` — 源码 JAR
-- `target/database-connect-1.0.1-javadoc.jar` — Javadoc JAR
+- `target/database-connect-1.0.2.jar` — 主 JAR
+- `target/database-connect-1.0.2-sources.jar` — 源码 JAR
+- `target/database-connect-1.0.2-javadoc.jar` — Javadoc JAR
 
 ### CI/CD
 

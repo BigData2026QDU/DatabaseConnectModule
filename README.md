@@ -27,7 +27,7 @@
 <dependency>
     <groupId>org.bigdata</groupId>
     <artifactId>database-connect</artifactId>
-    <version>1.0.1</version>
+    <version>1.0.2</version>
 </dependency>
 ```
 
