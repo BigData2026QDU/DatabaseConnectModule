@@ -27,7 +27,7 @@
 <dependency>
     <groupId>org.bigdata</groupId>
     <artifactId>database-connect</artifactId>
-    <version>1.0.0</version>
+    <version>1.0.1</version>
 </dependency>
 ```
 
@@ -48,7 +48,7 @@
 
 ## 快速开始
 
-1. 在 `src/main/resources/` 下创建 `hibernate.cfg.xml`，配置数据库连接信息：
+1. 在业务项目的 `src/main/resources/` 下创建 `hibernate.cfg.xml`，配置数据库连接信息和实体映射：
 
 ```xml
 <?xml version="1.0" encoding="UTF-8"?>
@@ -57,15 +57,25 @@
         "http://www.hibernate.org/dtd/hibernate-configuration-3.0.dtd">
 <hibernate-configuration>
     <session-factory>
-        <property name="hibernate.connection.url">jdbc:mysql://localhost:3306/mydb</property>
-        <property name="hibernate.connection.username">root</property>
-        <property name="hibernate.connection.password">password</property>
+        <property name="hibernate.connection.url">jdbc:mysql://localhost:3306/test_db?useSSL=false&amp;serverTimezone=UTC&amp;characterEncoding=UTF-8</property>
+        <property name="hibernate.connection.username">CHANGE_ME</property>
+        <property name="hibernate.connection.password">CHANGE_ME</property>
         <property name="hibernate.dialect">org.hibernate.dialect.MySQLDialect</property>
+
+        <!-- 由业务项目提供自己的实体映射 -->
+        <mapping class="org.bigdata.entity.User"/>
     </session-factory>
 </hibernate-configuration>
 ```
 
-2. 使用 `HibernateUtil` 进行数据库操作：
+2. 可选：使用运行时覆盖，避免把环境凭据写进仓库
+
+- 选择配置文件：`-Dhibernate.cfg.file=hibernate-prod.cfg.xml` 或环境变量 `HIBERNATE_CFG_FILE`
+- 直接覆盖 JDBC URL：`-Ddb.jdbcUrl=...` 或环境变量 `DB_JDBC_URL`
+- 按主机拼装 MySQL URL：`DB_HOST`、`DB_PORT`、`DB_NAME`
+- 覆盖账号密码：`DB_USERNAME`、`DB_PASSWORD` 或 `-Ddb.username`、`-Ddb.password`
+
+3. 使用 `HibernateUtil` 进行数据库操作：
 
 ```java
 import org.bigdata.tool.HibernateUtil;

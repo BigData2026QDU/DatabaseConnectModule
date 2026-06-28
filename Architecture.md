@@ -2,7 +2,7 @@
 
 ## 项目概述
 
-DatabaseConnect 是一个基于 Hibernate + HikariCP 的数据库连接管理模块，提供连接池、事务管理、CRUD 操作、HQL 查询和数据库元数据查询能力。
+DatabaseConnect 是一个基于 Hibernate + HikariCP 的数据库连接管理模块，提供连接池、事务管理、CRUD 操作、HQL 查询、数据库元数据查询以及运行时数据库配置覆盖能力。
 
 **包命名规范：** `org.bigdata.tool` 和 `org.bigdata.service`
 
@@ -67,6 +67,8 @@ DatabaseConnect/
 - `findById()` / `findAll()` — 按主键查询
 - `executeHQL()` — HQL 参数化查询
 - `executeUpdate()` — HQL 更新/删除
+- `hibernate.cfg.file` / `HIBERNATE_CFG_FILE` — 切换配置文件
+- `DB_HOST` / `DB_PORT` / `DB_NAME` / `DB_USERNAME` / `DB_PASSWORD` — 运行时覆盖连接信息
 - `shutdown()` — 关闭 SessionFactory
 
 ### ServicePoolManager（服务对象池）
@@ -128,9 +130,9 @@ mvn clean package
 ```
 
 生成文件：
-- `target/database-connect-1.0.0.jar` — 主 JAR
-- `target/database-connect-1.0.0-sources.jar` — 源码 JAR
-- `target/database-connect-1.0.0-javadoc.jar` — Javadoc JAR
+- `target/database-connect-1.0.1.jar` — 主 JAR
+- `target/database-connect-1.0.1-sources.jar` — 源码 JAR
+- `target/database-connect-1.0.1-javadoc.jar` — Javadoc JAR
 
 ### CI/CD
 

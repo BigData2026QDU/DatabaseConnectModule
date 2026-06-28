@@ -3,9 +3,17 @@ package org.bigdata.service;
 import org.bigdata.tool.HibernateUtil;
 import org.hibernate.query.NativeQuery;
 
-import java.util.*;
+import java.sql.DatabaseMetaData;
+import java.sql.ResultSet;
+import java.sql.SQLException;
+import java.util.ArrayList;
+import java.util.Arrays;
+import java.util.Collections;
+import java.util.LinkedHashMap;
+import java.util.LinkedHashSet;
+import java.util.List;
+import java.util.Map;
 import java.util.regex.Pattern;
-import java.util.stream.Collectors;
 
 /**
  * 数据库元数据服务
@@ -20,18 +28,30 @@ public class DatabaseMetaService {
      * 获取当前数据库的所有表名
      */
     public List<String> getAllTableNames() {
-        return HibernateUtil.executeQuery(session -> {
-            NativeQuery<?> q = session.createNativeQuery(
-                "SELECT TABLE_NAME FROM INFORMATION_SCHEMA.TABLES " +
-                "WHERE TABLE_SCHEMA = DATABASE() AND TABLE_TYPE = 'BASE TABLE' " +
-                "ORDER BY TABLE_NAME"
-            );
-
-            List<?> results = q.getResultList();
-            return results.stream()
-                .map(String::valueOf)
-                .collect(Collectors.toList());
-        });
+        return HibernateUtil.executeQuery(session -> session.doReturningWork(connection -> {
+            try {
+                DatabaseMetaData metaData = connection.getMetaData();
+                List<String> tableNames = new ArrayList<>();
+                try (ResultSet resultSet = metaData.getTables(connection.getCatalog(), null, "%", null)) {
+                    while (resultSet.next()) {
+                        String tableType = resultSet.getString("TABLE_TYPE");
+                        if (tableType != null
+                            && !"TABLE".equalsIgnoreCase(tableType)
+                            && !"BASE TABLE".equalsIgnoreCase(tableType)) {
+                            continue;
+                        }
+                        String tableName = resultSet.getString("TABLE_NAME");
+                        if (tableName != null) {
+                            tableNames.add(tableName);
+                        }
+                    }
+                }
+                tableNames.sort(String.CASE_INSENSITIVE_ORDER);
+                return tableNames;
+            } catch (SQLException e) {
+                throw new IllegalStateException("读取数据库表列表失败", e);
+            }
+        }));
     }
 
     /**
@@ -55,40 +75,24 @@ public class DatabaseMetaService {
         int safeLimit = Math.min(Math.max(limit, 1), 100);
 
         return HibernateUtil.executeQuery(session -> {
-            // 1. 获取列名
-            NativeQuery<?> columnQuery = session.createNativeQuery(
-                "SELECT COLUMN_NAME FROM INFORMATION_SCHEMA.COLUMNS " +
-                "WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = :tableName " +
-                "ORDER BY ORDINAL_POSITION"
-            );
-            columnQuery.setParameter("tableName", tableName);
-
-            List<?> columnResults = columnQuery.getResultList();
-            List<String> columns = columnResults.stream()
-                .map(String::valueOf)
-                .collect(Collectors.toList());
+            List<String> columns = loadTableColumns(session, tableName);
 
             if (columns.isEmpty()) {
                 throw new IllegalArgumentException("表不存在或无列：" + tableName);
             }
 
-            List<String> selected = normalizeColumns(selectedColumns);
+            List<String> selected = resolveSelectedColumns(selectedColumns, columns);
             if (!selected.isEmpty()) {
-                for (String c : selected) {
-                    if (!columns.contains(c)) {
-                        throw new IllegalArgumentException("列不存在：" + tableName + "." + c);
-                    }
-                }
                 columns = new ArrayList<>(selected);
             }
 
             // 2. 获取数据
             String sql;
             if (selected.isEmpty()) {
-                sql = "SELECT * FROM `" + tableName + "` LIMIT " + safeLimit;
+                sql = "SELECT * FROM " + tableName + " LIMIT " + safeLimit;
             } else {
-                String selectCols = String.join("`,`", columns);
-                sql = "SELECT `" + selectCols + "` FROM `" + tableName + "` LIMIT " + safeLimit;
+                String selectCols = String.join(", ", columns);
+                sql = "SELECT " + selectCols + " FROM " + tableName + " LIMIT " + safeLimit;
             }
 
             NativeQuery<?> dataQuery = session.createNativeQuery(sql);
@@ -114,16 +118,7 @@ public class DatabaseMetaService {
 
     public List<String> getTableColumns(String tableName) {
         requireSafeTableName(tableName);
-        return HibernateUtil.executeQuery(session -> {
-            NativeQuery<?> q = session.createNativeQuery(
-                "SELECT COLUMN_NAME FROM INFORMATION_SCHEMA.COLUMNS " +
-                "WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = :tableName " +
-                "ORDER BY ORDINAL_POSITION"
-            );
-            q.setParameter("tableName", tableName);
-            List<?> results = q.getResultList();
-            return results.stream().map(String::valueOf).collect(Collectors.toList());
-        });
+        return HibernateUtil.executeQuery(session -> loadTableColumns(session, tableName));
     }
 
     private static void requireSafeTableName(String tableName) {
@@ -150,5 +145,63 @@ public class DatabaseMetaService {
             }
         }
         return result;
+    }
+
+    private static List<String> resolveSelectedColumns(List<String> selectedColumns, List<String> availableColumns) {
+        List<String> normalized = normalizeColumns(selectedColumns);
+        if (normalized.isEmpty()) {
+            return Collections.emptyList();
+        }
+
+        List<String> resolved = new ArrayList<>();
+        for (String requested : normalized) {
+            String matched = null;
+            for (String available : availableColumns) {
+                if (available.equalsIgnoreCase(requested)) {
+                    matched = available;
+                    break;
+                }
+            }
+            if (matched == null) {
+                throw new IllegalArgumentException("列不存在：" + requested);
+            }
+            if (!resolved.contains(matched)) {
+                resolved.add(matched);
+            }
+        }
+        return resolved;
+    }
+
+    private static List<String> loadTableColumns(org.hibernate.Session session, String tableName) {
+        return session.doReturningWork(connection -> {
+            try {
+                DatabaseMetaData metaData = connection.getMetaData();
+                for (String candidate : buildNameCandidates(tableName)) {
+                    List<String> columns = new ArrayList<>();
+                    try (ResultSet resultSet = metaData.getColumns(connection.getCatalog(), null, candidate, "%")) {
+                        while (resultSet.next()) {
+                            String columnName = resultSet.getString("COLUMN_NAME");
+                            if (columnName != null) {
+                                columns.add(columnName);
+                            }
+                        }
+                    }
+                    if (!columns.isEmpty()) {
+                        return columns;
+                    }
+                }
+                return Collections.<String>emptyList();
+            } catch (SQLException e) {
+                throw new IllegalStateException("读取表字段失败: " + tableName, e);
+            }
+        });
+    }
+
+    private static List<String> buildNameCandidates(String name) {
+        LinkedHashSet<String> candidates = new LinkedHashSet<>();
+        candidates.add(name);
+        candidates.add(name.toUpperCase());
+        candidates.add(name.toLowerCase());
+        return new ArrayList<>(candidates);
     }
 }
