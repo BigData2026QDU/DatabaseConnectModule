@@ -14,11 +14,15 @@ on:
 permissions:
   contents: write
   issues: write
+  packages: write
 
 jobs:
   release:
     if: github.event_name == 'workflow_dispatch' || startsWith(github.event.issue.title, '[可发布]')
     runs-on: ubuntu-latest
+    env:
+      MAVEN_REPO_USERNAME: ${{ github.actor }}
+      MAVEN_REPO_TOKEN: ${{ github.token }}
 
     steps:
       - name: Acknowledge release trigger
@@ -51,6 +55,9 @@ jobs:
           distribution: temurin
           java-version: "17"
           cache: maven
+          server-id: github
+          server-username: MAVEN_REPO_USERNAME
+          server-password: MAVEN_REPO_TOKEN
 
       - name: Resolve release version
         id: version
@@ -105,8 +112,8 @@ jobs:
       - name: Set Maven project version for release
         run: mvn -B -ntp versions:set -DnewVersion=${{ steps.version.outputs.release_version }} -DgenerateBackupPoms=false
 
-      - name: Build JAR package
-        run: mvn -B -ntp clean package -DskipTests
+      - name: Build and publish JAR package
+        run: mvn -B -ntp clean deploy -DskipTests
 
       - name: Upload release artifact
         uses: actions/upload-artifact@v4
@@ -136,7 +143,8 @@ jobs:
           - 发布版本：${RELEASE_VERSION}
           - 触发来源：${TRIGGER_DESCRIPTION}
           - 对应提交：${GITHUB_SHA}
-          - 构建命令：\`mvn -B -ntp clean package -DskipTests\`
+          - 构建命令：\`mvn -B -ntp clean deploy -DskipTests\`
+          - Maven Packages：\`org.bigdata:database-connect:${RELEASE_VERSION}:jar\`
           - 测试执行：本仓库未运行测试；前置验证由外部测试框架负责
           EOF
 
@@ -173,6 +181,7 @@ jobs:
               `- 发布版本：${process.env.RELEASE_VERSION}`,
               `- GitHub Release：${process.env.RELEASE_URL}`,
               '- 构建产物：`target/*.jar`',
+              `- GitHub Packages：org.bigdata:database-connect:${process.env.RELEASE_VERSION}:jar`,
               '- 测试说明：本仓库未执行测试；发布前置验证由外部测试框架负责'
             ].join('\n');
 
