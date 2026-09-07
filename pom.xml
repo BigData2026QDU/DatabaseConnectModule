@@ -26,7 +26,7 @@
         <project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
 
         <!-- 依赖版本 -->
-        <hibernate.version>6.4.1.Final</hibernate.version>
+        <hibernate.version>7.4.7.Final</hibernate.version>
         <hikaricp.version>7.1.0</hikaricp.version>
         <commons-pool2.version>2.13.1</commons-pool2.version>
         <mysql.version>8.2.0</mysql.version>
